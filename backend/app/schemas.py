@@ -102,6 +102,20 @@ class AIPhanHoiSummaryResponse(BaseModel):
     TongSoPhanHoi: int
     DiemTrungBinh: float
     TomTatAI: str
+
+
+class AIAttendanceAnalysisResponse(BaseModel):
+    SuKienId: int
+    TenSuKien: str
+    TongDangKy: int
+    DaCheckIn: int
+    ChuaCheckIn: int
+    TyLeCheckIn: float
+    NhanXetAI: str
+    DeXuatAI: list[str]
+    Nguon: Literal["MOCK_AI", "OPENAI"]
+
+
 # =========================================================
 # CÂU HỎI THƯỜNG GẶP - FAQ
 # =========================================================

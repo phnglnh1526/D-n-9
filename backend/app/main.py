@@ -12,6 +12,7 @@ from .ai_service import (
     generate_event_notification,
     summarize_feedback,
 )
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -21,7 +22,12 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from .database import engine, get_db
+from .database import (
+    DATABASE_URL,
+    Base,
+    engine,
+    get_db,
+)
 from .models import (
     CauHoiThuongGap,
     DangKy,
@@ -49,14 +55,28 @@ from .schemas import (
     ThongKeSuKienResponse,
     
 )
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
 app = FastAPI(
     title="Event Management AI API",
     description="Backend API cho hệ thống quản lý sự kiện tích hợp AI",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
+
+# Vite may move to 5174 when another dev server already uses 5173.
+# Keep both local development origins allowed so the browser can call the API.
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
 ]
 
 app.add_middleware(
@@ -88,10 +108,16 @@ def health():
 @app.get("/health/db")
 def health_database():
     try:
-        with engine.connect() as connection:
-            database_name = connection.execute(
-                text("SELECT DATABASE()")
-            ).scalar_one()
+        if DATABASE_URL.startswith("sqlite"):
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+
+            database_name = "sqlite"
+        else:
+            with engine.connect() as connection:
+                database_name = connection.execute(
+                    text("SELECT DATABASE()")
+                ).scalar_one()
 
         return {
             "status": "ok",
@@ -103,6 +129,6 @@ def health_database():
 
         raise HTTPException(
             status_code=500,
-            detail="Không thể kết nối tới MySQL"
+            detail="Không thể kết nối tới cơ sở dữ liệu"
         )
 

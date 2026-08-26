@@ -15,6 +15,9 @@ function Events() {
   const [error, setError] =
     useState("");
 
+  const [retryCount, setRetryCount] =
+    useState(0);
+
 
   useEffect(() => {
     async function loadEvents() {
@@ -31,7 +34,7 @@ function Events() {
     }
 
     loadEvents();
-  }, []);
+  }, [retryCount]);
 
 
   if (loading) {
@@ -39,7 +42,25 @@ function Events() {
   }
 
   if (error) {
-    return <p>{error}</p>;
+    return (
+      <div className="page">
+        <div className="alert error-alert" role="alert">
+          <strong>Không thể tải danh sách sự kiện</strong>
+          <p>{error}</p>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              setError("");
+              setLoading(true);
+              setRetryCount((count) => count + 1);
+            }}
+          >
+            Thử lại
+          </button>
+        </div>
+      </div>
+    );
   }
 
 

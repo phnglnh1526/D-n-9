@@ -1,7 +1,11 @@
-import { Navigate } from "react-router";
+import {
+  Navigate,
+  useLocation,
+} from "react-router";
 
 
 function ProtectedRoute({ children }) {
+  const location = useLocation();
   const token = sessionStorage.getItem(
     "access_token"
   );
@@ -11,6 +15,7 @@ function ProtectedRoute({ children }) {
       <Navigate
         to="/login"
         replace
+        state={{ from: location }}
       />
     );
   }

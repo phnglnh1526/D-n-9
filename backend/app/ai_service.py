@@ -1,3 +1,4 @@
+import json
 import os
 import unicodedata
 
@@ -163,6 +164,102 @@ Trả lời bằng tiếng Việt gồm:
             average_score=average_score,
             feedback_texts=feedback_texts
         )
+
+
+def _mock_attendance_analysis(
+    attendance_rate: float,
+) -> tuple[str, list[str], str]:
+    if attendance_rate >= 80:
+        comment = "Tỷ lệ tham dự rất tốt và cho thấy hoạt động nhắc lịch đang hiệu quả."
+        suggestions = [
+            "Tiếp tục duy trì quy trình nhắc lịch hiện tại.",
+            "Khuyến khích người tham dự giới thiệu thêm người quan tâm.",
+        ]
+    elif attendance_rate >= 50:
+        comment = "Tỷ lệ tham dự ở mức trung bình, vẫn còn dư địa để cải thiện."
+        suggestions = [
+            "Gửi email hoặc tin nhắn nhắc lịch trước ngày diễn ra.",
+            "Đơn giản hóa quy trình check-in và gửi hướng dẫn sớm.",
+        ]
+    else:
+        comment = "Tỷ lệ tham dự thấp và cần được ưu tiên cải thiện."
+        suggestions = [
+            "Xác nhận lại người đăng ký trước ngày diễn ra.",
+            "Gửi thêm một lượt nhắc lịch có thông tin địa điểm và thời gian rõ ràng.",
+            "Khảo sát lý do người đã đăng ký không thể tham dự.",
+        ]
+
+    return comment, suggestions, "MOCK_AI"
+
+
+def analyze_attendance(
+    event_name: str,
+    total_registrations: int,
+    checked_in: int,
+    not_checked_in: int,
+    attendance_rate: float,
+) -> tuple[str, list[str], str]:
+    """Generate commentary without allowing AI to change authoritative metrics."""
+    if total_registrations == 0:
+        return (
+            "Sự kiện chưa có người đăng ký nên chưa thể đánh giá tỷ lệ tham dự.",
+            [
+                "Tăng cường truyền thông và mở đăng ký sớm.",
+                "Theo dõi số lượng đăng ký trước khi gửi nhắc lịch.",
+            ],
+            "MOCK_AI",
+        )
+
+    if AI_MODE == "mock":
+        return _mock_attendance_analysis(attendance_rate)
+
+    prompt = f"""
+Bạn là trợ lý phân tích dữ liệu sự kiện.
+
+Sự kiện: {event_name}
+Tổng đăng ký: {total_registrations}
+Đã check-in: {checked_in}
+Chưa check-in: {not_checked_in}
+Tỷ lệ tham dự đã được backend tính chính xác: {attendance_rate:.2f}%
+
+Chỉ phân tích các số liệu được cung cấp. Không thay đổi, làm tròn lại hoặc tự tạo số liệu.
+Trả về đúng JSON hợp lệ, không có markdown, theo cấu trúc:
+{{
+  "NhanXetAI": "một nhận xét ngắn bằng tiếng Việt",
+  "DeXuatAI": ["tối đa 3 đề xuất bằng tiếng Việt"]
+}}
+"""
+
+    try:
+        response = client.responses.create(
+            model="gpt-5-mini",
+            input=prompt,
+        )
+        payload = json.loads(response.output_text)
+        comment = payload.get("NhanXetAI")
+        suggestions = payload.get("DeXuatAI")
+
+        if not isinstance(comment, str) or not comment.strip():
+            raise ValueError("AI response thiếu NhanXetAI")
+        if not isinstance(suggestions, list):
+            raise ValueError("AI response thiếu DeXuatAI")
+
+        cleaned_suggestions = [
+            item.strip()
+            for item in suggestions
+            if isinstance(item, str) and item.strip()
+        ][:3]
+
+        if not cleaned_suggestions:
+            raise ValueError("AI response không có đề xuất hợp lệ")
+
+        return comment.strip(), cleaned_suggestions, "OPENAI"
+
+    except Exception as error:
+        print(f"OpenAI attendance analysis error: {error}")
+        return _mock_attendance_analysis(attendance_rate)
+
+
 # =========================================================
 # CHATBOT - XỬ LÝ CÂU HỎI
 # =========================================================

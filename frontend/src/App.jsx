@@ -3,68 +3,64 @@ import {
   Route,
   Routes,
 } from "react-router";
-import SubmitFeedback
-  from "./pages/SubmitFeedback";
-import AdminLayout
-  from "./components/AdminLayout";
 
-import ProtectedRoute
-  from "./components/ProtectedRoute";
+import AdminEvents from "./pages/AdminEvents";
+import AIAssistant from "./pages/AIAssistant";
+import CheckIn from "./pages/CheckIn";
+import Dashboard from "./pages/Dashboard";
+import EventDetail from "./pages/EventDetail";
+import Events from "./pages/Events";
+import Feedback from "./pages/Feedback";
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Registrations from "./pages/Registrations";
+import SubmitFeedback from "./pages/SubmitFeedback";
 
-import AIAssistant
-  from "./pages/AIAssistant";
-
-import AdminEvents
-  from "./pages/AdminEvents";
-
-import CheckIn
-  from "./pages/CheckIn";
-
-import Dashboard
-  from "./pages/Dashboard";
-
-import Events
-  from "./pages/Events";
-
-import Feedback
-  from "./pages/Feedback";
-
-import Login
-  from "./pages/Login";
-
-import Registrations
-  from "./pages/Registrations";
+import AdminLayout from "./components/AdminLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import PublicLayout from "./components/PublicLayout";
 
 import "./App.css";
 
-import EventDetail
-  from "./pages/EventDetail";
-  
+
 function App() {
   return (
     <Routes>
-
       {/* PUBLIC */}
-    <Route
-  path="/feedback/:registrationId"
-  element={<SubmitFeedback />}
-/>
+      <Route element={<PublicLayout />}>
+        <Route index element={<Home />} />
+
+        <Route
+          path="events"
+          element={<Events />}
+        />
+
+        <Route
+          path="events/:eventId"
+          element={<EventDetail />}
+        />
+
+        <Route
+          path="feedback/:registrationId"
+          element={<SubmitFeedback />}
+        />
+      </Route>
+
       <Route
         path="/login"
         element={<Login />}
       />
 
-      <Route
-        path="/events"
-        element={<Events />}
-      />
-
-      <Route
-        path="/events/:eventId"
-        element={<EventDetail />}
-      />
-
       {/* ADMIN */}
+      <Route
+        path="/admin"
+        element={
+          <Navigate
+            to="/dashboard"
+            replace
+          />
+        }
+      />
 
       <Route
         element={
@@ -73,7 +69,6 @@ function App() {
           </ProtectedRoute>
         }
       >
-
         <Route
           path="/dashboard"
           element={<Dashboard />}
@@ -103,20 +98,7 @@ function App() {
           path="/admin/ai"
           element={<AIAssistant />}
         />
-
       </Route>
-
-
-      <Route
-        path="/"
-        element={
-          <Navigate
-            to="/events"
-            replace
-          />
-        }
-      />
-
     </Routes>
   );
 }

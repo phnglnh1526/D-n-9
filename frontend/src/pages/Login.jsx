@@ -1,10 +1,14 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import {
+  useLocation,
+  useNavigate,
+} from "react-router";
 
 import { login } from "../services/auth";
 
 
 function Login() {
+  const location = useLocation();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState(
@@ -38,7 +42,12 @@ function Login() {
         data.access_token
       );
 
-      navigate("/dashboard");
+      const from = location.state?.from;
+      const destination = from
+        ? `${from.pathname}${from.search || ""}${from.hash || ""}`
+        : "/dashboard";
+
+      navigate(destination, { replace: true });
 
     } catch (err) {
       setError(err.message);

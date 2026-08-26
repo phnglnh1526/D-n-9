@@ -9,6 +9,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from ..ai_service import (
+    analyze_attendance,
     answer_event_question,
     generate_event_notification,
     summarize_feedback,
@@ -27,14 +28,14 @@ from ..models import (
     ThongBao,
 )
 from ..schemas import (
+    AIAttendanceAnalysisResponse,
     AIPhanHoiSummaryResponse,
     ChatRequest,
     ChatResponse,
     ThongBaoAIRequest,
     ThongBaoResponse,
 )
-
-
+from ..statistics_service import get_attendance_metrics
 router = APIRouter(
     prefix="/events",
     tags=["AI & Notifications"]
@@ -146,7 +147,65 @@ def ai_feedback_summary(
 
 
 # =========================================================
-# 2. CHATBOT HỎI ĐÁP SỰ KIỆN
+# 2. AI PHÂN TÍCH TỶ LỆ THAM DỰ
+# =========================================================
+
+@router.get(
+    "/{event_id}/ai/attendance-analysis",
+    response_model=AIAttendanceAnalysisResponse,
+)
+def ai_attendance_analysis(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: NguoiDung = Depends(
+        require_roles(
+            "ADMIN",
+            "ORGANIZER"
+        )
+    )
+):
+    event = (
+        db.query(SuKien)
+        .filter(SuKien.SuKienId == event_id)
+        .first()
+    )
+
+    if event is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy sự kiện"
+        )
+
+    check_event_permission(
+        event,
+        current_user
+    )
+
+    attendance = get_attendance_metrics(
+        db,
+        event_id,
+    )
+
+    comment, suggestions, source = analyze_attendance(
+        event_name=event.TenSuKien,
+        total_registrations=attendance["TongDangKy"],
+        checked_in=attendance["DaCheckIn"],
+        not_checked_in=attendance["ChuaCheckIn"],
+        attendance_rate=attendance["TyLeCheckIn"],
+    )
+
+    return {
+        "SuKienId": event.SuKienId,
+        "TenSuKien": event.TenSuKien,
+        **attendance,
+        "NhanXetAI": comment,
+        "DeXuatAI": suggestions,
+        "Nguon": source,
+    }
+
+
+# =========================================================
+# 3. CHATBOT HỎI ĐÁP SỰ KIỆN
 # PUBLIC
 # =========================================================
 

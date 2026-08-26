@@ -1,4 +1,7 @@
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 
 function getAuthHeaders() {
@@ -16,17 +19,68 @@ function getAuthHeaders() {
 // ========================================================
 
 export async function getEvents() {
-  const response = await fetch(
-    `${API_URL}/events`
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "Không thể tải danh sách sự kiện"
+  try {
+    const response = await fetch(
+      `${API_URL}/events`
     );
-  }
 
-  return response.json();
+    if (!response.ok) {
+      throw new Error(
+        "Không thể tải danh sách sự kiện"
+      );
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Không thể kết nối tới backend. Hãy kiểm tra backend đang chạy ở cổng 8000.",
+        { cause: error }
+      );
+    }
+
+    throw error;
+  }
+}
+
+
+// ========================================================
+// AI ATTENDANCE ANALYSIS
+// ========================================================
+
+export async function getAttendanceAnalysis(eventId) {
+  try {
+    const response = await fetch(
+      `${API_URL}/events/${eventId}/ai/attendance-analysis`,
+      {
+        headers: getAuthHeaders(),
+      }
+    );
+
+    if (!response.ok) {
+      let message = "Không thể phân tích tỷ lệ tham dự";
+
+      try {
+        const error = await response.json();
+        message = error.detail || message;
+      } catch {
+        // Giữ message mặc định
+      }
+
+      throw new Error(message);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        "Không thể kết nối tới backend. Hãy kiểm tra API và database.",
+        { cause: error }
+      );
+    }
+
+    throw error;
+  }
 }
 
 
@@ -286,3 +340,9 @@ export async function submitFeedback(
 
   return response.json();
 }
+export const getEventFeedback = async (eventId) => {
+  return [];
+};
+export const getFeedbackSummary = async (eventId) => {
+    return [];
+};

@@ -57,7 +57,21 @@ function AdminLayout() {
           <span>Management</span>
         </div>
 
-        <nav className="sidebar-menu">
+        <nav
+          className="sidebar-menu"
+          aria-label="Điều hướng quản trị"
+        >
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) =>
+              isActive
+                ? "menu-item active"
+                : "menu-item"
+            }
+          >
+            Trang chủ
+          </NavLink>
 
           <NavLink
             to="/dashboard"
@@ -122,7 +136,7 @@ function AdminLayout() {
                 : "menu-item"
             }
           >
-            Trợ lý AI
+            Phân tích tỷ lệ tham dự
           </NavLink>
 
         </nav>

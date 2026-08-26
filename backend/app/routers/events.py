@@ -20,6 +20,7 @@ from ..models import (
     PhanHoi,
     SuKien,
 )
+from ..statistics_service import get_attendance_metrics
 from ..schemas import (
     SuKienCreate,
     SuKienResponse,
@@ -340,44 +341,10 @@ def get_event_statistics(
         current_user
     )
 
-    # Tổng đăng ký
-    tong_dang_ky = (
-        db.query(
-            func.count(DangKy.DangKyId)
-        )
-        .filter(
-            DangKy.SuKienId == event_id
-        )
-        .scalar()
-        or 0
+    attendance = get_attendance_metrics(
+        db,
+        event_id,
     )
-
-    # Đã check-in
-    da_check_in = (
-        db.query(
-            func.count(DangKy.DangKyId)
-        )
-        .filter(
-            DangKy.SuKienId == event_id,
-            DangKy.DaCheckIn.is_(True)
-        )
-        .scalar()
-        or 0
-    )
-
-    chua_check_in = (
-        tong_dang_ky - da_check_in
-    )
-
-    # Tỷ lệ check-in
-    if tong_dang_ky > 0:
-        ty_le_check_in = (
-            da_check_in
-            / tong_dang_ky
-            * 100
-        )
-    else:
-        ty_le_check_in = 0
 
     # Tổng phản hồi
     tong_phan_hoi = (
@@ -418,13 +385,7 @@ def get_event_statistics(
     return {
         "SuKienId": event.SuKienId,
         "TenSuKien": event.TenSuKien,
-        "TongDangKy": tong_dang_ky,
-        "DaCheckIn": da_check_in,
-        "ChuaCheckIn": chua_check_in,
-        "TyLeCheckIn": round(
-            ty_le_check_in,
-            2
-        ),
+        **attendance,
         "TongPhanHoi": tong_phan_hoi,
         "DiemTrungBinh": round(
             float(diem_trung_binh),
