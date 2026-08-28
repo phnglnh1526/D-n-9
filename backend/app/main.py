@@ -71,6 +71,9 @@ app.include_router(events.router)
 app.include_router(registrations.router)
 app.include_router(feedback.router)
 app.include_router(ai.router)
+app.include_router(ai.general_router)
+
+
 @app.get("/")
 def root():
     return {

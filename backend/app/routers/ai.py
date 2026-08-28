@@ -9,7 +9,9 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from ..ai_service import (
+    answer_event_query,
     answer_event_question,
+    generate_attendance_insight,
     generate_event_notification,
     summarize_feedback,
 )
@@ -20,17 +22,24 @@ from ..auth_service import (
 from ..database import get_db
 from ..models import (
     CauHoiThuongGap,
+    CheckIn,
     DangKy,
+    DienGia,
     NguoiDung,
     PhanHoi,
+    PhienSuKien,
     SuKien,
     ThongBao,
 )
 from ..schemas import (
     AIPhanHoiSummaryResponse,
+    AttendanceInsightRequest,
+    AttendanceInsightResponse,
     ChatRequest,
     ChatResponse,
+    ThongBaoAIPreviewResponse,
     ThongBaoAIRequest,
+    ThongBaoCreateRequest,
     ThongBaoResponse,
 )
 
@@ -39,6 +48,101 @@ router = APIRouter(
     prefix="/events",
     tags=["AI & Notifications"]
 )
+
+general_router = APIRouter(
+    tags=["AI Chatbot"]
+)
+
+
+def get_full_event_data(event_id: int, db: Session) -> dict | None:
+    event = db.query(SuKien).filter(SuKien.SuKienId == event_id).first()
+    if not event:
+        return None
+
+    # 1. Total registrations
+    registrations = db.query(DangKy).filter(DangKy.SuKienId == event_id).all()
+    total_reg = len(registrations)
+
+    # 2. Check-ins
+    checkins = (
+        db.query(CheckIn)
+        .join(DangKy, CheckIn.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId == event_id)
+        .all()
+    )
+    checked_in_count = len(checkins)
+    checkin_rate = f"{round((checked_in_count / total_reg * 100), 1)}%" if total_reg > 0 else "0%"
+
+    # 3. Feedback
+    feedbacks = (
+        db.query(PhanHoi)
+        .join(DangKy, PhanHoi.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId == event_id)
+        .all()
+    )
+    scores = [f.DiemDanhGia for f in feedbacks if f.DiemDanhGia is not None]
+    avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
+
+    # 4. Sessions
+    sessions = (
+        db.query(PhienSuKien)
+        .filter(PhienSuKien.SuKienId == event_id)
+        .order_by(PhienSuKien.ThoiGianBatDau.asc())
+        .all()
+    )
+    sessions_data = [
+        {
+            "TieuDe": s.TieuDe,
+            "ThoiGianBatDau": s.ThoiGianBatDau.strftime("%H:%M ngày %d/%m/%Y") if s.ThoiGianBatDau else "",
+            "ThoiGianKetThuc": s.ThoiGianKetThuc.strftime("%H:%M ngày %d/%m/%Y") if s.ThoiGianKetThuc else "",
+            "DiaDiemChiTiet": s.DiaDiem,
+            "DienGia": s.dien_gia.HoTen if s.dien_gia else None,
+            "ChucDanh": s.dien_gia.ChucDanh if s.dien_gia else None,
+            "DonVi": s.dien_gia.DonVi if s.dien_gia else None,
+        }
+        for s in sessions
+    ]
+
+    # 5. Speakers in this event
+    speaker_ids = {s.DienGiaId for s in sessions if s.DienGiaId}
+    speakers = db.query(DienGia).filter(DienGia.DienGiaId.in_(speaker_ids)).all() if speaker_ids else []
+    speakers_data = [
+        {"HoTen": sp.HoTen, "ChucDanh": sp.ChucDanh, "DonVi": sp.DonVi}
+        for sp in speakers
+    ]
+
+    return {
+        "SuKienId": event.SuKienId,
+        "TenSuKien": event.TenSuKien,
+        "MoTa": event.MoTa,
+        "DiaDiem": event.DiaDiem,
+        "ThoiGianBatDau": event.ThoiGianBatDau.strftime("%H:%M ngày %d/%m/%Y") if event.ThoiGianBatDau else "",
+        "ThoiGianKetThuc": event.ThoiGianKetThuc.strftime("%H:%M ngày %d/%m/%Y") if event.ThoiGianKetThuc else "",
+        "SoLuongToiDa": event.SoLuongToiDa,
+        "TrangThai": event.TrangThai,
+        "TongDangKy": total_reg,
+        "DaCheckIn": checked_in_count,
+        "TyLeCheckIn": checkin_rate,
+        "TongPhanHoi": len(feedbacks),
+        "DiemTrungBinh": avg_score,
+        "Sessions": sessions_data,
+        "Speakers": speakers_data,
+    }
+
+
+def get_all_events_summary(db: Session) -> list[dict]:
+    events = db.query(SuKien).order_by(SuKien.ThoiGianBatDau.asc()).all()
+    return [
+        {
+            "SuKienId": e.SuKienId,
+            "TenSuKien": e.TenSuKien,
+            "TrangThai": e.TrangThai,
+            "DiaDiem": e.DiaDiem,
+            "ThoiGianBatDau": e.ThoiGianBatDau.strftime("%H:%M ngày %d/%m/%Y") if e.ThoiGianBatDau else "",
+            "ThoiGianKetThuc": e.ThoiGianKetThuc.strftime("%H:%M ngày %d/%m/%Y") if e.ThoiGianKetThuc else "",
+        }
+        for e in events
+    ]
 
 
 # =========================================================
@@ -146,9 +250,86 @@ def ai_feedback_summary(
 
 
 # =========================================================
-# 2. CHATBOT HỎI ĐÁP SỰ KIỆN
+# 2. CHATBOT HỎI ĐÁP SỰ KIỆN TOÀN CỤC & THEO EVENT
 # PUBLIC
 # =========================================================
+
+@general_router.post(
+    "/ai/chat",
+    response_model=ChatResponse
+)
+def general_chat(
+    data: ChatRequest,
+    db: Session = Depends(get_db)
+):
+    question = (data.message or data.CauHoi or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Câu hỏi không được để trống")
+
+    event_id = data.event_id or data.SuKienId
+
+    # Lấy dữ liệu sự kiện cụ thể nếu có
+    event_data = None
+    faqs = []
+    if event_id:
+        event_data = get_full_event_data(event_id, db)
+        if event_data:
+            faq_records = db.query(CauHoiThuongGap).filter(CauHoiThuongGap.SuKienId == event_id).all()
+            faqs = [{"CauHoi": f.CauHoi, "CauTraLoi": f.CauTraLoi} for f in faq_records]
+
+    # Lấy danh sách tất cả sự kiện
+    all_events = get_all_events_summary(db)
+
+    # Hỏi đáp dựa trên dữ liệu thật từ DB
+    answer, source = answer_event_query(
+        question=question,
+        event_data=event_data,
+        all_events_data=all_events,
+        faqs=faqs
+    )
+
+    return {
+        "message": question,
+        "response": answer,
+        "event_id": event_id,
+        "source": source,
+        "SuKienId": event_id,
+        "CauHoi": question,
+        "CauTraLoi": answer,
+        "Nguon": source,
+    }
+
+
+# =========================================================
+# 3. AI PHÂN TÍCH TỶ LỆ THAM DỰ (ATTENDANCE INSIGHT)
+# PUBLIC / ADMIN / ORGANIZER
+# =========================================================
+
+@general_router.post(
+    "/ai/attendance-insight",
+    response_model=AttendanceInsightResponse
+)
+def attendance_insight(data: AttendanceInsightRequest):
+    # Input validation
+    if data.event:
+        if data.event.registrations < 0 or data.event.checkIns < 0 or data.event.unchecked < 0:
+            raise HTTPException(status_code=400, detail="Số liệu người tham dự không thể âm")
+        if data.event.attendanceRate < 0 or data.event.attendanceRate > 100:
+            raise HTTPException(status_code=400, detail="Tỷ lệ tham dự phải nằm trong khoảng từ 0 đến 100")
+
+    event_dict = data.event.model_dump() if data.event else {}
+    comparison_list = [c.model_dump() for c in data.comparison]
+    calc_dict = data.calculations.model_dump() if data.calculations else {}
+
+    result = generate_attendance_insight(
+        context=data.context,
+        event=event_dict,
+        comparison=comparison_list,
+        calculations=calc_dict
+    )
+
+    return result
+
 
 @router.post(
     "/{event_id}/ai/chat",
@@ -159,69 +340,48 @@ def event_chat(
     data: ChatRequest,
     db: Session = Depends(get_db)
 ):
-    # Tìm sự kiện
-    event = (
-        db.query(SuKien)
-        .filter(
-            SuKien.SuKienId == event_id
-        )
-        .first()
-    )
+    question = (data.message or data.CauHoi or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Câu hỏi không được để trống")
 
-    if event is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Không tìm thấy sự kiện"
-        )
+    event_data = get_full_event_data(event_id, db)
+    if not event_data:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
 
-    # Lấy FAQ của sự kiện
-    faq_records = (
-        db.query(CauHoiThuongGap)
-        .filter(
-            CauHoiThuongGap.SuKienId
-            == event_id
-        )
-        .all()
-    )
+    faq_records = db.query(CauHoiThuongGap).filter(CauHoiThuongGap.SuKienId == event_id).all()
+    faqs = [{"CauHoi": f.CauHoi, "CauTraLoi": f.CauTraLoi} for f in faq_records]
 
-    faqs = [
-        {
-            "CauHoi": faq.CauHoi,
-            "CauTraLoi": faq.CauTraLoi
-        }
-        for faq in faq_records
-    ]
+    all_events = get_all_events_summary(db)
 
-    answer, source = (
-        answer_event_question(
-            event_name=event.TenSuKien,
-            event_location=event.DiaDiem,
-            event_start=event.ThoiGianBatDau,
-            event_end=event.ThoiGianKetThuc,
-            question=data.CauHoi,
-            faqs=faqs
-        )
+    answer, source = answer_event_query(
+        question=question,
+        event_data=event_data,
+        all_events_data=all_events,
+        faqs=faqs
     )
 
     return {
+        "message": question,
+        "response": answer,
+        "event_id": event_id,
+        "source": source,
         "SuKienId": event_id,
-        "CauHoi": data.CauHoi,
+        "CauHoi": question,
         "CauTraLoi": answer,
-        "Nguon": source
+        "Nguon": source,
     }
 
 
 # =========================================================
-# 3. AI SINH THÔNG BÁO
+# 3. AI SINH NỘI DUNG THÔNG BÁO (PREVIEW - CHƯA LƯU VÀO DB)
 # ADMIN / ORGANIZER
 # =========================================================
 
 @router.post(
-    "/{event_id}/ai/notifications",
-    response_model=ThongBaoResponse,
-    status_code=status.HTTP_201_CREATED
+    "/{event_id}/ai/generate-notification",
+    response_model=ThongBaoAIPreviewResponse
 )
-def create_ai_notification(
+def generate_ai_notification_preview(
     event_id: int,
     data: ThongBaoAIRequest,
     db: Session = Depends(get_db),
@@ -258,39 +418,84 @@ def create_ai_notification(
         .upper()
     )
 
-    allowed_types = {
-        "NHAC_LICH",
-        "CAP_NHAT",
-        "CAM_ON",
-    }
-
-    if notification_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Loại thông báo phải là "
-                "NHAC_LICH, CAP_NHAT hoặc CAM_ON"
-            )
-        )
-
-    # Sinh nội dung bằng AI / MOCK
-    title, content = (
-        generate_event_notification(
-            event_name=event.TenSuKien,
-            event_location=event.DiaDiem,
-            event_start=event.ThoiGianBatDau,
-            event_end=event.ThoiGianKetThuc,
-            notification_type=notification_type
-        )
+    # Sinh nội dung bằng AI / MOCK dựa trên thông tin sự kiện
+    title, content = generate_event_notification(
+        event_name=event.TenSuKien,
+        event_location=event.DiaDiem,
+        event_start=event.ThoiGianBatDau,
+        event_end=event.ThoiGianKetThuc,
+        notification_type=notification_type,
+        extra_note=data.GhiChu,
+        new_location=data.DiaDiemMoi
     )
 
+    return {
+        "TieuDe": title,
+        "NoiDung": content,
+        "LoaiThongBao": notification_type
+    }
+
+
+# =========================================================
+# 4. LƯU & GỬI THÔNG BÁO CHÍNH THỨC (SAU KHI ORGANIZER ĐÃ CHỈNH SỬA)
+# ADMIN / ORGANIZER
+# =========================================================
+
+@router.post(
+    "/{event_id}/notifications",
+    response_model=ThongBaoResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def save_and_publish_notification(
+    event_id: int,
+    data: ThongBaoCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: NguoiDung = Depends(
+        require_roles(
+            "ADMIN",
+            "ORGANIZER"
+        )
+    )
+):
+    event = (
+        db.query(SuKien)
+        .filter(
+            SuKien.SuKienId == event_id
+        )
+        .first()
+    )
+
+    if event is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Không tìm thấy sự kiện"
+        )
+
+    check_event_permission(
+        event,
+        current_user
+    )
+
+    if not data.TieuDe or not data.TieuDe.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Tiêu đề thông báo không được để trống"
+        )
+
+    if not data.NoiDung or not data.NoiDung.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Nội dung thông báo không được để trống"
+        )
+
+    now = datetime.now()
     notification = ThongBao(
         SuKienId=event_id,
-        TieuDe=title,
-        NoiDung=content,
-        LoaiThongBao=notification_type,
-        NgayTao=datetime.now(),
-        ThoiGianGui=None
+        TieuDe=data.TieuDe.strip(),
+        NoiDung=data.NoiDung.strip(),
+        LoaiThongBao=data.LoaiThongBao or "NHAC_LICH",
+        NgayTao=now,
+        ThoiGianGui=now
     )
 
     db.add(notification)
@@ -301,8 +506,8 @@ def create_ai_notification(
 
 
 # =========================================================
-# 4. XEM THÔNG BÁO CỦA SỰ KIỆN
-# PUBLIC
+# 5. XEM DANH SÁCH THÔNG BÁO CỦA SỰ KIỆN
+# PUBLIC / ATTENDEE / ORGANIZER
 # =========================================================
 
 @router.get(
@@ -339,3 +544,43 @@ def get_event_notifications(
     )
 
     return notifications
+
+
+# =========================================================
+# 6. XÓA THÔNG BÁO
+# ADMIN / ORGANIZER
+# =========================================================
+
+@router.delete(
+    "/{event_id}/notifications/{notification_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_notification(
+    event_id: int,
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: NguoiDung = Depends(
+        require_roles("ADMIN", "ORGANIZER")
+    )
+):
+    event = db.query(SuKien).filter(SuKien.SuKienId == event_id).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+
+    check_event_permission(event, current_user)
+
+    notification = (
+        db.query(ThongBao)
+        .filter(
+            ThongBao.ThongBaoId == notification_id,
+            ThongBao.SuKienId == event_id
+        )
+        .first()
+    )
+
+    if notification is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy thông báo")
+
+    db.delete(notification)
+    db.commit()
+    return None
