@@ -40,8 +40,7 @@ router = APIRouter(
     tags=["AI & Notifications"]
 )
 
-<<<<<<< Updated upstream
-=======
+
 general_router = APIRouter(
     tags=["AI Chatbot"]
 )
@@ -138,8 +137,6 @@ def get_all_events_summary(db: Session) -> list[dict]:
         }
         for e in events
     ]
-
->>>>>>> Stashed changes
 
 # =========================================================
 # 1. AI TÓM TẮT PHẢN HỒI

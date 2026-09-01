@@ -242,8 +242,62 @@ export async function registerForEvent(
   return response.json();
 }
 // ========================================================
-// AI FEEDBACK SUMMARY
+// GET FEEDBACK FOR EVENT
 // ========================================================
+
+export async function getEventFeedback(eventId) {
+  const response = await fetch(
+    `${API_URL}/events/${eventId}/feedback`,
+    {
+      headers: getAuthHeaders(),
+    }
+  );
+
+  if (!response.ok) {
+    let message =
+      "Không thể tải phản hồi";
+
+    try {
+      const error = await response.json();
+      message = error.detail || message;
+    } catch {
+      // giữ message mặc định
+    }
+
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+// ========================================================
+// GET AI FEEDBACK SUMMARY
+// ========================================================
+
+export async function getFeedbackSummary(eventId) {
+  const response = await fetch(
+    `${API_URL}/events/${eventId}/ai/feedback-summary`,
+    {
+      headers: getAuthHeaders(),
+    }
+  );
+
+  if (!response.ok) {
+    let message =
+      "Không thể tải tóm tắt phản hồi";
+
+    try {
+      const error = await response.json();
+      message = error.detail || message;
+    } catch {
+      // giữ message mặc định
+    }
+
+    throw new Error(message);
+  }
+
+  return response.json();
+}
 
 // ========================================================
 // SUBMIT FEEDBACK - PUBLIC
