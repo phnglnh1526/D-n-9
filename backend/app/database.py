@@ -15,13 +15,14 @@ load_dotenv(BASE_DIR / ".env")
 
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
-MYSQL_DATABASE = os.getenv("MYSQL_DATABASE")
-MYSQL_USER = os.getenv("MYSQL_USER")
-MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "event_management")
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 
+password_segment = f":{MYSQL_PASSWORD}" if MYSQL_PASSWORD else ""
 
 DATABASE_URL = (
-    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
+    f"mysql+pymysql://{MYSQL_USER}{password_segment}"
     f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
     f"?charset=utf8mb4"
 )

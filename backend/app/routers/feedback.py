@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..auth_service import (
     check_event_permission,
+    get_current_user,
     require_roles,
 )
 from ..database import get_db
@@ -34,8 +35,80 @@ router = APIRouter(
 
 
 # =========================================================
-# 1. GỬI PHẢN HỒI SAU SỰ KIỆN
-# PUBLIC - nhưng phải có DangKy hợp lệ và đã check-in
+# 1. GỬI PHẢN HỒI THEO SỰ KIỆN (ATTENDEE)
+# =========================================================
+
+@router.post(
+    "/events/{event_id}/feedback",
+    response_model=PhanHoiResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def create_event_feedback(
+    event_id: int,
+    data: PhanHoiCreate,
+    db: Session = Depends(get_db),
+    current_user: NguoiDung = Depends(get_current_user)
+):
+    event = db.query(SuKien).filter(SuKien.SuKienId == event_id).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy sự kiện")
+
+    if data.DiemDanhGia < 1 or data.DiemDanhGia > 5:
+        raise HTTPException(status_code=400, detail="Điểm đánh giá phải từ 1 đến 5 sao")
+
+    # Tìm đăng ký của người dùng cho sự kiện này
+    registration = (
+        db.query(DangKy)
+        .filter(
+            DangKy.SuKienId == event_id,
+            (DangKy.NguoiDungId == current_user.NguoiDungId)
+            | (DangKy.Email == current_user.Email)
+        )
+        .first()
+    )
+
+    if registration is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Bạn chưa đăng ký tham gia sự kiện này nên không thể gửi phản hồi"
+        )
+
+    existing_feedback = (
+        db.query(PhanHoi)
+        .filter(PhanHoi.DangKyId == registration.DangKyId)
+        .first()
+    )
+
+    if existing_feedback is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Bạn đã gửi phản hồi cho sự kiện này rồi"
+        )
+
+    feedback = PhanHoi(
+        DangKyId=registration.DangKyId,
+        DiemDanhGia=data.DiemDanhGia,
+        NoiDung=data.NoiDung.strip() if data.NoiDung else None,
+        NgayTao=datetime.now()
+    )
+
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+
+    return {
+        "PhanHoiId": feedback.PhanHoiId,
+        "DangKyId": feedback.DangKyId,
+        "DiemDanhGia": feedback.DiemDanhGia,
+        "NoiDung": feedback.NoiDung,
+        "NgayTao": feedback.NgayTao,
+        "HoTen": registration.HoTen,
+        "Email": registration.Email
+    }
+
+
+# =========================================================
+# 1.1 GỬI PHẢN HỒI THEO MÃ ĐĂNG KÝ
 # =========================================================
 
 @router.post(
@@ -63,13 +136,6 @@ def create_feedback(
             detail="Không tìm thấy đăng ký"
         )
 
-    # Chỉ được feedback sau khi check-in
-    if not registration.DaCheckIn:
-        raise HTTPException(
-            status_code=400,
-            detail="Người tham dự chưa check-in"
-        )
-
     # Điểm phải từ 1 đến 5
     if (
         data.DiemDanhGia < 1
@@ -77,7 +143,7 @@ def create_feedback(
     ):
         raise HTTPException(
             status_code=400,
-            detail="Điểm đánh giá phải từ 1 đến 5"
+            detail="Điểm đánh giá phải từ 1 đến 5 sao"
         )
 
     # Một đăng ký chỉ feedback một lần
@@ -98,7 +164,7 @@ def create_feedback(
     feedback = PhanHoi(
         DangKyId=registration_id,
         DiemDanhGia=data.DiemDanhGia,
-        NoiDung=data.NoiDung,
+        NoiDung=data.NoiDung.strip() if data.NoiDung else None,
         NgayTao=datetime.now()
     )
 
@@ -106,7 +172,15 @@ def create_feedback(
     db.commit()
     db.refresh(feedback)
 
-    return feedback
+    return {
+        "PhanHoiId": feedback.PhanHoiId,
+        "DangKyId": feedback.DangKyId,
+        "DiemDanhGia": feedback.DiemDanhGia,
+        "NoiDung": feedback.NoiDung,
+        "NgayTao": feedback.NgayTao,
+        "HoTen": registration.HoTen,
+        "Email": registration.Email
+    }
 
 
 # =========================================================
@@ -147,12 +221,19 @@ def get_event_feedback(
         current_user
     )
 
-    feedbacks = (
-        db.query(PhanHoi)
+    feedbacks_with_attendees = (
+        db.query(
+            PhanHoi.PhanHoiId,
+            PhanHoi.DangKyId,
+            PhanHoi.DiemDanhGia,
+            PhanHoi.NoiDung,
+            PhanHoi.NgayTao,
+            DangKy.HoTen,
+            DangKy.Email
+        )
         .join(
             DangKy,
-            PhanHoi.DangKyId
-            == DangKy.DangKyId
+            PhanHoi.DangKyId == DangKy.DangKyId
         )
         .filter(
             DangKy.SuKienId == event_id
@@ -163,7 +244,18 @@ def get_event_feedback(
         .all()
     )
 
-    return feedbacks
+    return [
+        {
+            "PhanHoiId": row.PhanHoiId,
+            "DangKyId": row.DangKyId,
+            "DiemDanhGia": row.DiemDanhGia,
+            "NoiDung": row.NoiDung,
+            "NgayTao": row.NgayTao,
+            "HoTen": row.HoTen,
+            "Email": row.Email,
+        }
+        for row in feedbacks_with_attendees
+    ]
 
 
 # =========================================================

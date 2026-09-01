@@ -10,8 +10,10 @@ import {
 
 import {
   getEventById,
+  getEventSessions,
   registerForEvent,
 } from "../services/api";
+import { getCurrentUser } from "../services/auth";
 import { QRCodeSVG } from "qrcode.react";
 
 const initialRegistrationForm = {
@@ -25,6 +27,12 @@ function EventDetail() {
   const { eventId } = useParams();
 
   const [event, setEvent] =
+    useState(null);
+
+  const [sessions, setSessions] =
+    useState([]);
+
+  const [currentUser, setCurrentUser] =
     useState(null);
 
   const [loading, setLoading] =
@@ -55,16 +63,34 @@ function EventDetail() {
 
 
   // ==============================
-  // LOAD EVENT
+  // LOAD EVENT, SESSIONS & USER
   // ==============================
 
   useEffect(() => {
-    async function loadEvent() {
+    async function loadEventData() {
       try {
-        const data =
-          await getEventById(eventId);
+        const token = sessionStorage.getItem("access_token");
+        if (token) {
+          try {
+            const user = await getCurrentUser(token);
+            setCurrentUser(user);
+            setRegistrationForm((prev) => ({
+              ...prev,
+              HoTen: user.HoTen || "",
+              Email: user.Email || "",
+            }));
+          } catch {
+            // Token expired or invalid
+          }
+        }
 
-        setEvent(data);
+        const [eventData, sessionData] = await Promise.all([
+          getEventById(eventId),
+          getEventSessions(eventId).catch(() => []),
+        ]);
+
+        setEvent(eventData);
+        setSessions(sessionData);
 
       } catch (err) {
         setError(err.message);
@@ -74,7 +100,7 @@ function EventDetail() {
       }
     }
 
-    loadEvent();
+    loadEventData();
 
   }, [eventId]);
 
@@ -107,6 +133,13 @@ function EventDetail() {
 
     setRegistrationError("");
     setRegistrationResult(null);
+
+    const token = sessionStorage.getItem("access_token");
+    if (!token) {
+      setRegistrationError("Vui lòng đăng nhập tài khoản trước khi đăng ký.");
+      return;
+    }
+
     setRegistering(true);
 
     try {
@@ -117,10 +150,6 @@ function EventDetail() {
         );
 
       setRegistrationResult(result);
-
-      setRegistrationForm(
-        initialRegistrationForm
-      );
 
       setShowRegistration(false);
 
@@ -275,55 +304,128 @@ function EventDetail() {
 
 
           <div className="detail-item">
-
-            <span>
-              Trạng thái
-            </span>
-
-            <strong>
-              {event.TrangThai}
-            </strong>
-
+            <span>Trạng thái</span>
+            <strong>{event.TrangThai}</strong>
           </div>
 
+          <div className="detail-item">
+            <span>Số lượng khách tối đa</span>
+            <strong>
+              {event.SoLuongToiDa
+                ? `${event.SoLuongToiDa} người`
+                : "Không giới hạn"}
+            </strong>
+          </div>
         </div>
 
 
         <div className="event-description">
-
-          <h2>
-            Giới thiệu sự kiện
-          </h2>
-
-          <p>
-            {
-              event.MoTa
-              || "Sự kiện chưa có mô tả."
-            }
-          </p>
-
+          <h2>Giới thiệu sự kiện</h2>
+          <p>{event.MoTa || "Sự kiện chưa có mô tả."}</p>
         </div>
 
+        {/* SCHEDULE & SESSIONS */}
+        {sessions.length > 0 && (
+          <div className="event-description" style={{ marginTop: "24px" }}>
+            <h2>📅 Lịch trình & Diễn giả</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
+              {sessions.map((sess) => (
+                <div
+                  key={sess.PhienSuKienId}
+                  style={{
+                    padding: "16px",
+                    borderRadius: "12px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
+                      {sess.TieuDe}
+                    </h3>
+                    <span style={{ fontSize: "13px", padding: "4px 10px", borderRadius: "20px", background: "rgba(59, 130, 246, 0.15)", color: "#60a5fa" }}>
+                      ⏰ {new Date(sess.ThoiGianBatDau).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} - {new Date(sess.ThoiGianKetThuc).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
 
-        {/* REGISTER BUTTON */}
+                  {sess.DiaDiem && (
+                    <div style={{ fontSize: "13px", color: "#94a3b8", marginTop: "4px" }}>
+                      📍 {sess.DiaDiem}
+                    </div>
+                  )}
 
+                  {sess.MoTa && (
+                    <p style={{ margin: "8px 0 0", fontSize: "14px", color: "#cbd5e1" }}>
+                      {sess.MoTa}
+                    </p>
+                  )}
+
+                  {sess.dien_gia && (
+                    <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed rgba(255, 255, 255, 0.1)", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: "13px" }}>
+                        {sess.dien_gia.HoTen.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "13px" }}>
+                          🎤 {sess.dien_gia.HoTen}
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                          {sess.dien_gia.ChucDanh} {sess.dien_gia.DonVi ? `— ${sess.dien_gia.DonVi}` : ""}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* REGISTER BUTTON & STATUS NOTICE */}
         {!registrationResult && (
-
-          <button
-            className="register-button"
-            onClick={() => {
-              setShowRegistration(
-                (current) => !current
-              );
-
-              setRegistrationError("");
-            }}
-          >
-            {showRegistration
-              ? "Đóng form đăng ký"
-              : "Đăng ký tham gia"}
-          </button>
-
+          <div>
+            {event.TrangThai !== "DA_DUYET" && event.TrangThai !== "DANG_DIEN_RA" ? (
+              <div
+                style={{
+                  marginTop: "20px",
+                  padding: "12px 16px",
+                  borderRadius: "8px",
+                  background: "rgba(239, 68, 68, 0.1)",
+                  color: "#f87171",
+                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  fontWeight: 500,
+                }}
+              >
+                🔒 Sự kiện hiện không mở đăng ký (Trạng thái: {event.TrangThai}).
+              </div>
+            ) : !currentUser ? (
+              <div style={{ marginTop: "20px" }}>
+                <Link
+                  to="/login"
+                  className="register-button"
+                  style={{
+                    display: "inline-block",
+                    textDecoration: "none",
+                    textAlign: "center",
+                  }}
+                >
+                  🔑 Đăng nhập để đăng ký tham gia
+                </Link>
+              </div>
+            ) : (
+              <button
+                className="register-button"
+                onClick={() => {
+                  setShowRegistration((current) => !current);
+                  setRegistrationError("");
+                }}
+              >
+                {showRegistration
+                  ? "Đóng form đăng ký"
+                  : "Đăng ký tham gia ngay"}
+              </button>
+            )}
+          </div>
         )}
 
       </div>

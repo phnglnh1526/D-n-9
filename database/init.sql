@@ -1,7 +1,6 @@
--- =========================================================
--- HỆ THỐNG QUẢN LÝ SỰ KIỆN TÍCH HỢP AI
--- Database: event_management
--- =========================================================
+CREATE DATABASE IF NOT EXISTS event_management
+    CHARACTER SET utf8mb4
+    COLLATE utf8mb4_unicode_ci;
 
 USE event_management;
 
@@ -64,6 +63,8 @@ CREATE TABLE SuKien (
 
     DiaDiem VARCHAR(255),
 
+    SoLuongToiDa INT NULL DEFAULT NULL,
+
     TrangThai VARCHAR(30) NOT NULL DEFAULT 'NHAP',
 
     NgayTao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -120,6 +121,8 @@ CREATE TABLE DangKy (
 
     SuKienId INT NOT NULL,
 
+    NguoiDungId INT NULL,
+
     HoTen VARCHAR(100) NOT NULL,
 
     Email VARCHAR(150) NOT NULL,
@@ -147,12 +150,52 @@ CREATE TABLE DangKy (
         FOREIGN KEY (SuKienId)
         REFERENCES SuKien(SuKienId)
         ON UPDATE CASCADE
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+
+    CONSTRAINT FK_DangKy_NguoiDung
+        FOREIGN KEY (NguoiDungId)
+        REFERENCES NguoiDung(NguoiDungId)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL
 );
 
 
 -- =========================================================
--- 6. PHẢN HỒI
+-- 6. CHECK-IN SỰ KIỆN
+-- =========================================================
+
+CREATE TABLE CheckIn (
+    CheckInId INT AUTO_INCREMENT PRIMARY KEY,
+
+    DangKyId INT NOT NULL,
+
+    NhanVienId INT NOT NULL,
+
+    ThoiGianCheckIn DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PhuongThucCheckIn VARCHAR(50) NOT NULL DEFAULT 'MANUAL',
+
+    TrangThai VARCHAR(50) NOT NULL DEFAULT 'THANH_CONG',
+
+    CONSTRAINT FK_CheckIn_DangKy
+        FOREIGN KEY (DangKyId)
+        REFERENCES DangKy(DangKyId)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+
+    CONSTRAINT FK_CheckIn_NhanVien
+        FOREIGN KEY (NhanVienId)
+        REFERENCES NguoiDung(NguoiDungId)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+
+    CONSTRAINT UQ_CheckIn_DangKy
+        UNIQUE (DangKyId)
+);
+
+
+-- =========================================================
+-- 7. PHẢN HỒI
 -- =========================================================
 
 CREATE TABLE PhanHoi (
@@ -224,4 +267,19 @@ CREATE TABLE ThongBao (
         REFERENCES SuKien(SuKienId)
         ON UPDATE CASCADE
         ON DELETE CASCADE
+);
+
+
+-- =========================================================
+-- 9. DỮ LIỆU KHỞI TẠO MẶC ĐỊNH (SEED ADMIN)
+-- =========================================================
+
+INSERT IGNORE INTO NguoiDung (NguoiDungId, HoTen, Email, MatKhauHash, VaiTro, NgayTao)
+VALUES (
+    1,
+    'Admin Quản Trị',
+    'admin@test.com',
+    '$argon2id$v=19$m=65536,t=3,p=4$isdgtfz2LGsGcoDV0xLCuw$WOZWkuVs4JtfjBjcyIrm8P79/V473zSJcqg2u6NMSNc',
+    'ADMIN',
+    NOW()
 );

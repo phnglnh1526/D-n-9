@@ -20,7 +20,7 @@ try:
     )
 
     if user:
-        print("Tài khoản đã tồn tại.")
+        print("User already exists.")
 
     else:
 
@@ -37,7 +37,7 @@ try:
         db.add(user)
         db.commit()
 
-        print("Đã tạo tài khoản ADMIN.")
+        print("Created ADMIN user successfully.")
 
 finally:
     db.close()

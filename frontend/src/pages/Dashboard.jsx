@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   ResponsiveContainer,
@@ -12,6 +12,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import {
+  getAttendanceInsight,
   getDashboardOverview,
   getEvents,
   getEventStatistics,
@@ -27,6 +28,214 @@ const EVENT_STATUS_LABELS = {
 
 function getEventStatusLabel(status) {
   return EVENT_STATUS_LABELS[status] || status || "Không xác định";
+}
+
+function roundToTwoDecimals(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function toNonNegativeCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0;
+}
+
+function calculateAttendanceRate(registrations, checkIns) {
+  const total = toNonNegativeCount(registrations);
+  const checkedIn = toNonNegativeCount(checkIns);
+
+  if (total === 0) {
+    return 0;
+  }
+
+  return roundToTwoDecimals((checkedIn / total) * 100);
+}
+
+function toSafeAttendanceRate(value, registrations, checkIns) {
+  const number = Number(value);
+  const fallback = calculateAttendanceRate(registrations, checkIns);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.min(100, Math.max(0, roundToTwoDecimals(number)));
+}
+
+function normalizeComparisonItems(comparisonStats) {
+  if (!Array.isArray(comparisonStats)) {
+    return [];
+  }
+
+  return comparisonStats.reduce((items, item) => {
+    const eventName = typeof item?.eventName === "string" ? item.eventName.trim() : "";
+
+    if (!eventName) {
+      return items;
+    }
+
+    const registrations = toNonNegativeCount(item.registrations);
+    const checkIns = toNonNegativeCount(item.checkIns);
+    const calculatedRate = calculateAttendanceRate(registrations, checkIns);
+    const attendanceRate = toSafeAttendanceRate(
+      registrations > 0 ? calculatedRate : item.attendanceRate,
+      registrations,
+      checkIns
+    );
+    const numericEventId = Number(item.eventId);
+    const normalizedItem = {
+      eventName,
+      registrations,
+      checkIns,
+      attendanceRate,
+    };
+
+    if (Number.isFinite(numericEventId)) {
+      normalizedItem.eventId = numericEventId;
+    }
+
+    items.push(normalizedItem);
+    return items;
+  }, []);
+}
+
+function buildAttendanceInsightCalculations({
+  context,
+  comparison,
+  currentEventId,
+  currentRate,
+}) {
+  const comparisonWithData = comparison.filter((item) => item.registrations > 0);
+  const currentId = currentEventId == null ? null : String(currentEventId);
+  const averageCandidates =
+    context === "single_event"
+      ? comparisonWithData.filter(
+          (item) => currentId === null || String(item.eventId) !== currentId
+        )
+      : comparisonWithData;
+  const calculations = {
+    numberOfComparedEvents: comparison.length,
+  };
+
+  if (averageCandidates.length > 0) {
+    const comparisonAverage = roundToTwoDecimals(
+      averageCandidates.reduce((sum, item) => sum + item.attendanceRate, 0) /
+        averageCandidates.length
+    );
+
+    calculations.comparisonAverage = comparisonAverage;
+    calculations.differenceFromAverage = roundToTwoDecimals(
+      currentRate - comparisonAverage
+    );
+  }
+
+  if (context === "single_event" && currentId !== null) {
+    const rankedItems = [...comparisonWithData].sort(
+      (a, b) => b.attendanceRate - a.attendanceRate
+    );
+    const currentRank = rankedItems.findIndex(
+      (item) => String(item.eventId) === currentId
+    );
+
+    if (rankedItems.length >= 2 && currentRank >= 0) {
+      calculations.rankingPosition = currentRank + 1;
+    }
+  }
+
+  return calculations;
+}
+
+function buildAttendanceInsightPayload({
+  isAll,
+  selectedEventObj,
+  totalRegistrations,
+  totalCheckIns,
+  uncheckedCount,
+  safeAttendanceRate,
+  comparisonStats,
+}) {
+  const context = isAll ? "all_events" : "single_event";
+  const registrations = toNonNegativeCount(totalRegistrations);
+  const checkIns = toNonNegativeCount(totalCheckIns);
+  const unchecked = toNonNegativeCount(uncheckedCount);
+  const calculatedAttendanceRate = calculateAttendanceRate(
+    registrations,
+    checkIns
+  );
+  const attendanceRate =
+    registrations > 0
+      ? calculatedAttendanceRate
+      : toSafeAttendanceRate(safeAttendanceRate, registrations, checkIns);
+  const comparison = normalizeComparisonItems(comparisonStats);
+  const event = {
+    registrations,
+    checkIns,
+    unchecked,
+    attendanceRate,
+  };
+
+  if (!isAll && selectedEventObj) {
+    const numericEventId = Number(selectedEventObj.SuKienId);
+    const eventName =
+      typeof selectedEventObj.TenSuKien === "string"
+        ? selectedEventObj.TenSuKien.trim()
+        : "";
+    const status =
+      typeof selectedEventObj.TrangThai === "string"
+        ? selectedEventObj.TrangThai.trim()
+        : "";
+
+    if (Number.isFinite(numericEventId)) {
+      event.id = numericEventId;
+    }
+    if (eventName) {
+      event.name = eventName;
+    }
+    if (status) {
+      event.status = status;
+    }
+  }
+
+  return {
+    context,
+    event,
+    comparison,
+    calculations: buildAttendanceInsightCalculations({
+      context,
+      comparison,
+      currentEventId: isAll ? null : selectedEventObj?.SuKienId,
+      currentRate: attendanceRate,
+    }),
+  };
+}
+
+function normalizeAttendanceInsightResponse(response) {
+  const summary =
+    typeof response?.summary === "string" ? response.summary.trim() : "";
+  const findings = Array.isArray(response?.findings)
+    ? response.findings
+        .filter((item) => typeof item === "string" && item.trim())
+        .slice(0, 3)
+        .map((item) => item.trim())
+    : [];
+  const recommendations = Array.isArray(response?.recommendations)
+    ? response.recommendations
+        .filter((item) => typeof item === "string" && item.trim())
+        .slice(0, 3)
+        .map((item) => item.trim())
+    : [];
+  const source =
+    typeof response?.source === "string" ? response.source.trim() : "";
+
+  return {
+    summary,
+    findings,
+    recommendations,
+    source,
+  };
+}
+
+function getInsightSourceLabel(source) {
+  return source.toUpperCase() === "MOCK" ? "Mock AI" : "AI";
 }
 
 function DistributionCustomTooltip({ active, payload, totalRegistrations }) {
@@ -112,6 +321,10 @@ function Dashboard() {
   const [comparisonStats, setComparisonStats] = useState([]);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [comparisonError, setComparisonError] = useState("");
+  const [aiInsight, setAiInsight] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const aiRequestIdRef = useRef(0);
 
   // ==========================================
   // 1. INITIAL LOAD: USER, EVENTS & OVERVIEW
@@ -323,6 +536,57 @@ function Dashboard() {
     .sort((a, b) => b.attendanceRate - a.attendanceRate)
     .slice(0, 5);
 
+  const isSingleEventStatsReady =
+    isAll ||
+    (!statsLoading &&
+      singleEventStats &&
+      String(singleEventStats.SuKienId) === String(selectedEventId));
+
+  const handleEventSelectionChange = (nextEventId) => {
+    if (String(nextEventId) === String(selectedEventId)) {
+      return;
+    }
+
+    aiRequestIdRef.current += 1;
+    setAiInsight(null);
+    setAiError("");
+    setAiLoading(false);
+    setSelectedEventId(nextEventId);
+  };
+
+  const handleAttendanceInsight = async () => {
+    const requestId = aiRequestIdRef.current + 1;
+    aiRequestIdRef.current = requestId;
+    setAiError("");
+    setAiInsight(null);
+    setAiLoading(true);
+
+    try {
+      const payload = buildAttendanceInsightPayload({
+        isAll,
+        selectedEventObj,
+        totalRegistrations,
+        totalCheckIns,
+        uncheckedCount,
+        safeAttendanceRate,
+        comparisonStats,
+      });
+      const response = await getAttendanceInsight(payload);
+
+      if (requestId === aiRequestIdRef.current) {
+        setAiInsight(normalizeAttendanceInsightResponse(response));
+      }
+    } catch {
+      if (requestId === aiRequestIdRef.current) {
+        setAiError("Không thể thực hiện phân tích AI lúc này.");
+      }
+    } finally {
+      if (requestId === aiRequestIdRef.current) {
+        setAiLoading(false);
+      }
+    }
+  };
+
   const renderCustomDot = (props) => {
     const { cx, cy, payload } = props;
     const isSelected = String(payload?.eventId) === String(selectedEventId);
@@ -386,18 +650,19 @@ function Dashboard() {
             <span>Khoảng thời gian</span>
           </button>
 
-          {/* TODO: AI phân tích — sẽ kết nối AI endpoint ở bước sau */}
           <button
             type="button"
             className="analytics-btn analytics-btn--primary"
-            disabled
-            title="Sẽ được triển khai ở bước AI Analytics"
-            aria-label="AI phân tích chuyên sâu (sẽ triển khai ở bước sau)"
+            onClick={handleAttendanceInsight}
+            disabled={aiLoading || !isSingleEventStatsReady}
+            title={aiLoading ? "Đang phân tích dữ liệu" : "Phân tích tỷ lệ tham dự bằng AI"}
+            aria-label={aiLoading ? "Đang phân tích dữ liệu" : "AI phân tích chuyên sâu"}
+            aria-busy={aiLoading}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
             </svg>
-            <span>AI phân tích chuyên sâu</span>
+            <span>{aiLoading ? "Đang phân tích..." : "AI phân tích chuyên sâu"}</span>
           </button>
         </div>
       </header>
@@ -422,7 +687,7 @@ function Dashboard() {
             id="event-selector-dropdown"
             className="analytics-event-selector__dropdown"
             value={selectedEventId}
-            onChange={(e) => setSelectedEventId(e.target.value)}
+            onChange={(e) => handleEventSelectionChange(e.target.value)}
             aria-label="Chọn sự kiện để phân tích dữ liệu"
           >
             <option value="ALL">Toàn bộ sự kiện (Tổng quan hệ thống)</option>
@@ -865,34 +1130,93 @@ function Dashboard() {
           <div className="analytics-card analytics-card--ai">
             <div className="analytics-card__header">
               <div>
-                <h3 className="analytics-card__title">🧠 AI Insight</h3>
+                <div className="analytics-ai-header-meta">
+                  <h3 className="analytics-card__title">🧠 AI Insight</h3>
+                  {aiInsight?.source && (
+                    <span className="analytics-ai-source">
+                      {getInsightSourceLabel(aiInsight.source)}
+                    </span>
+                  )}
+                </div>
                 <p className="analytics-card__subtitle">Nhận xét thông minh từ dữ liệu</p>
               </div>
             </div>
             <div className="analytics-card__body">
-              {/* AI nhận xét */}
-              <div className="analytics-ai-section">
-                <h4 className="analytics-ai-section__title">Nhận xét</h4>
-                <div className="analytics-ai-section__content analytics-ai-section__content--placeholder">
-                  Chọn <strong>AI phân tích</strong> để nhận nhận xét từ dữ liệu sự kiện.
+              {aiLoading ? (
+                <div className="analytics-ai-loading" role="status" aria-live="polite">
+                  <span className="analytics-ai-loading__line analytics-ai-loading__line--long" />
+                  <span className="analytics-ai-loading__line analytics-ai-loading__line--medium" />
+                  <span className="analytics-ai-loading__line analytics-ai-loading__line--short" />
+                  <span className="analytics-ai-loading__label">Đang phân tích dữ liệu...</span>
                 </div>
-              </div>
+              ) : aiError ? (
+                <div className="analytics-ai-error" role="alert">
+                  <span>{aiError}</span>
+                  <button
+                    type="button"
+                    className="analytics-ai-retry"
+                    onClick={handleAttendanceInsight}
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              ) : !aiInsight ? (
+                <div className="analytics-ai-placeholder">
+                  Phân tích dữ liệu sự kiện để nhận nhận xét và đề xuất từ AI.
+                  <span>Nhấn “AI phân tích chuyên sâu” để bắt đầu.</span>
+                </div>
+              ) : (
+                <>
+                  <div className="analytics-ai-section">
+                    <h4 className="analytics-ai-section__title">AI nhận xét</h4>
+                    <div
+                      className={`analytics-ai-section__content analytics-ai-summary${
+                        aiInsight.summary ? "" : " analytics-ai-section__content--placeholder"
+                      }`}
+                    >
+                      {aiInsight.summary || "Chưa có nhận xét từ AI."}
+                    </div>
+                  </div>
 
-              {/* AI phát hiện */}
-              <div className="analytics-ai-section">
-                <h4 className="analytics-ai-section__title">Phát hiện</h4>
-                <div className="analytics-ai-section__content analytics-ai-section__content--placeholder">
-                  Chưa có phát hiện bất thường.
-                </div>
-              </div>
+                  <div className="analytics-ai-section">
+                    <h4 className="analytics-ai-section__title">AI phát hiện</h4>
+                    {aiInsight.findings.length > 0 ? (
+                      <div className="analytics-ai-findings" role="list">
+                        {aiInsight.findings.map((finding) => (
+                          <div className="analytics-ai-finding" key={finding} role="listitem">
+                            <span className="analytics-ai-finding__icon" aria-hidden="true" />
+                            <span>{finding}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="analytics-ai-section__content analytics-ai-section__content--placeholder">
+                        Chưa có phát hiện để hiển thị.
+                      </div>
+                    )}
+                  </div>
 
-              {/* Đề xuất */}
-              <div className="analytics-ai-section">
-                <h4 className="analytics-ai-section__title">Đề xuất</h4>
-                <div className="analytics-ai-section__content analytics-ai-section__content--placeholder">
-                  Đề xuất sẽ được tạo sau khi phân tích dữ liệu.
-                </div>
-              </div>
+                  <div className="analytics-ai-section">
+                    <h4 className="analytics-ai-section__title">Đề xuất</h4>
+                    {aiInsight.recommendations.length > 0 ? (
+                      <div className="analytics-ai-recommendations" role="list">
+                        {aiInsight.recommendations.map((recommendation, index) => (
+                          <div className="analytics-ai-recommendation" key={recommendation} role="listitem">
+                            <span className="analytics-ai-recommendation__index" aria-hidden="true">
+                              {String(index + 1).padStart(2, "0")}
+                            </span>
+                            <span>{recommendation}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="analytics-ai-section__content analytics-ai-section__content--placeholder">
+                        Chưa có đề xuất để hiển thị.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -1056,8 +1380,8 @@ function Dashboard() {
                         <button
                           type="button"
                           className="edit-button"
-                          onClick={() => setSelectedEventId(String(event.SuKienId))}
-                          style={{ padding: "4px 10px", fontSize: "12px" }}
+                          onClick={() => handleEventSelectionChange(String(event.SuKienId))}
+                           style={{ padding: "4px 10px", fontSize: "12px" }}
                         >
                           📊 Lọc xem
                         </button>

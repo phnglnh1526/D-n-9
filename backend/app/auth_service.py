@@ -146,15 +146,16 @@ def get_current_user(
 # =========================================================
 
 def require_roles(*allowed_roles):
+    allowed_set = {role.strip().upper() for role in allowed_roles}
 
     def role_checker(
         current_user: NguoiDung = Depends(
             get_current_user
         )
     ):
+        user_role = (current_user.VaiTro or "").strip().upper()
 
-        if current_user.VaiTro not in allowed_roles:
-
+        if user_role not in allowed_set:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Bạn không có quyền thực hiện chức năng này"
@@ -163,17 +164,21 @@ def require_roles(*allowed_roles):
         return current_user
 
     return role_checker
+
+
 def check_event_permission(
     event,
     current_user: NguoiDung
 ):
+    user_role = (current_user.VaiTro or "").strip().upper()
+
     # ADMIN có quyền với mọi sự kiện
-    if current_user.VaiTro == "ADMIN":
+    if user_role == "ADMIN":
         return
 
     # ORGANIZER chỉ được thao tác sự kiện của mình
     if (
-        current_user.VaiTro == "ORGANIZER"
+        user_role == "ORGANIZER"
         and event.NguoiToChucId == current_user.NguoiDungId
     ):
         return

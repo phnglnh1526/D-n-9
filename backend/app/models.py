@@ -56,6 +56,10 @@ class NguoiDung(Base):
         back_populates="nguoi_to_chuc"
     )
 
+    dang_kys: Mapped[list["DangKy"]] = relationship(
+        back_populates="nguoi_dung"
+    )
+
 
 # =========================================================
 # 2. DIỄN GIẢ
@@ -129,6 +133,12 @@ class SuKien(Base):
 
     DiaDiem: Mapped[str | None] = mapped_column(
         String(255)
+    )
+
+    SoLuongToiDa: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=None
     )
 
     TrangThai: Mapped[str] = mapped_column(
@@ -240,6 +250,11 @@ class DangKy(Base):
         nullable=False
     )
 
+    NguoiDungId: Mapped[int | None] = mapped_column(
+        ForeignKey("NguoiDung.NguoiDungId"),
+        nullable=True
+    )
+
     HoTen: Mapped[str] = mapped_column(
         String(100),
         nullable=False
@@ -292,15 +307,74 @@ class DangKy(Base):
         back_populates="dang_kys"
     )
 
+    nguoi_dung: Mapped["NguoiDung | None"] = relationship(
+        back_populates="dang_kys"
+    )
+
     phan_hois: Mapped[list["PhanHoi"]] = relationship(
         back_populates="dang_ky",
         cascade="all, delete",
         passive_deletes=True
-)
+    )
+
+    check_in_record: Mapped["CheckIn | None"] = relationship(
+        back_populates="dang_ky",
+        uselist=False,
+        cascade="all, delete",
+        passive_deletes=True
+    )
 
 
 # =========================================================
-# 6. PHẢN HỒI
+# 6. CHECK-IN
+# =========================================================
+
+class CheckIn(Base):
+    __tablename__ = "CheckIn"
+
+    CheckInId: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True
+    )
+
+    DangKyId: Mapped[int] = mapped_column(
+        ForeignKey("DangKy.DangKyId"),
+        nullable=False,
+        unique=True
+    )
+
+    NhanVienId: Mapped[int] = mapped_column(
+        ForeignKey("NguoiDung.NguoiDungId"),
+        nullable=False
+    )
+
+    ThoiGianCheckIn: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False
+    )
+
+    PhuongThucCheckIn: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="MANUAL"
+    )
+
+    TrangThai: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="THANH_CONG"
+    )
+
+    dang_ky: Mapped["DangKy"] = relationship(
+        back_populates="check_in_record"
+    )
+
+    nhan_vien: Mapped["NguoiDung"] = relationship()
+
+
+# =========================================================
+# 7. PHẢN HỒI
 # =========================================================
 
 class PhanHoi(Base):

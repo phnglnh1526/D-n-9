@@ -2637,6 +2637,141 @@ button:disabled,
   font-style: italic;
 }
 
+.analytics-ai-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analytics-ai-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-full);
+  background-color: var(--primary-light);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.analytics-ai-placeholder {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.analytics-ai-placeholder span {
+  display: block;
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.analytics-ai-summary {
+  white-space: pre-line;
+}
+
+.analytics-ai-findings,
+.analytics-ai-recommendations {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.analytics-ai-finding,
+.analytics-ai-recommendation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analytics-ai-finding__icon {
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  flex: 0 0 6px;
+  border-radius: var(--radius-full);
+  background-color: var(--text-muted);
+}
+
+.analytics-ai-recommendation__index {
+  min-width: 24px;
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+
+.analytics-ai-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.analytics-ai-loading__line {
+  display: block;
+  height: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background-color: var(--border-light);
+}
+
+.analytics-ai-loading__line--long {
+  width: 92%;
+}
+
+.analytics-ai-loading__line--medium {
+  width: 74%;
+}
+
+.analytics-ai-loading__line--short {
+  width: 55%;
+}
+
+.analytics-ai-loading__label {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.analytics-ai-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background-color: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analytics-ai-retry {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  color: var(--danger-text);
+  font-size: 12px;
+}
+
+.analytics-ai-retry:hover:not(:disabled) {
+  background-color: var(--danger-bg);
+}
+
 /* --- Data List (AI Explainability) --- */
 .analytics-data-list {
   display: flex;

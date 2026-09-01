@@ -15,6 +15,7 @@ from ..auth_service import (
 )
 from ..database import get_db
 from ..models import (
+    CheckIn,
     DangKy,
     NguoiDung,
     PhanHoi,
@@ -25,6 +26,7 @@ from ..schemas import (
     SuKienResponse,
     SuKienUpdate,
     ThongKeSuKienResponse,
+    ThongKeTongQuanResponse,
 )
 
 
@@ -44,10 +46,19 @@ router = APIRouter(
     response_model=list[SuKienResponse]
 )
 def get_events(
+    organizer_id: int | None = None,
+    trang_thai: str | None = None,
     db: Session = Depends(get_db)
 ):
-    events = db.query(SuKien).all()
+    query = db.query(SuKien)
 
+    if organizer_id:
+        query = query.filter(SuKien.NguoiToChucId == organizer_id)
+
+    if trang_thai:
+        query = query.filter(SuKien.TrangThai == trang_thai.upper())
+
+    events = query.order_by(SuKien.ThoiGianBatDau.desc()).all()
     return events
 
 
@@ -71,6 +82,21 @@ def create_event(
         )
     )
 ):
+    # Validation: Tên sự kiện không được để trống
+    ten_su_kien = data.TenSuKien.strip()
+    if not ten_su_kien:
+        raise HTTPException(
+            status_code=400,
+            detail="Tên sự kiện không được để trống"
+        )
+
+    # Validation: Số lượng tối đa phải > 0
+    if data.SoLuongToiDa is not None and data.SoLuongToiDa <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Số lượng khách tối đa phải lớn hơn 0"
+        )
+
     # ORGANIZER chỉ được tạo sự kiện thuộc chính mình
     if current_user.VaiTro == "ORGANIZER":
         organizer_id = current_user.NguoiDungId
@@ -93,7 +119,7 @@ def create_event(
                 detail="Người tổ chức không tồn tại"
             )
 
-    # Kiểm tra thời gian
+    # Validation: Thời gian kết thúc phải sau thời gian bắt đầu
     if (
         data.ThoiGianKetThuc
         <= data.ThoiGianBatDau
@@ -108,11 +134,12 @@ def create_event(
 
     new_event = SuKien(
         NguoiToChucId=organizer_id,
-        TenSuKien=data.TenSuKien,
+        TenSuKien=ten_su_kien,
         MoTa=data.MoTa,
         ThoiGianBatDau=data.ThoiGianBatDau,
         ThoiGianKetThuc=data.ThoiGianKetThuc,
         DiaDiem=data.DiaDiem,
+        SoLuongToiDa=data.SoLuongToiDa,
         TrangThai="NHAP",
         NgayTao=datetime.now()
     )
@@ -195,6 +222,22 @@ def update_event(
         current_user
     )
 
+    # Validation: Tên sự kiện không được để trống
+    ten_su_kien = data.TenSuKien.strip()
+    if not ten_su_kien:
+        raise HTTPException(
+            status_code=400,
+            detail="Tên sự kiện không được để trống"
+        )
+
+    # Validation: Số lượng tối đa phải > 0
+    if data.SoLuongToiDa is not None and data.SoLuongToiDa <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Số lượng khách tối đa phải lớn hơn 0"
+        )
+
+    # Validation: Thời gian kết thúc phải sau thời gian bắt đầu
     if (
         data.ThoiGianKetThuc
         <= data.ThoiGianBatDau
@@ -236,7 +279,7 @@ def update_event(
             current_user.NguoiDungId
         )
 
-    event.TenSuKien = data.TenSuKien
+    event.TenSuKien = ten_su_kien
     event.MoTa = data.MoTa
 
     event.ThoiGianBatDau = (
@@ -248,6 +291,7 @@ def update_event(
     )
 
     event.DiaDiem = data.DiaDiem
+    event.SoLuongToiDa = data.SoLuongToiDa
     event.TrangThai = data.TrangThai
 
     db.commit()
@@ -303,7 +347,119 @@ def delete_event(
 
 
 # =========================================================
-# 6. THỐNG KÊ SỰ KIỆN
+# 6. THỐNG KÊ TỔNG QUAN DASHBOARD
+# ADMIN / ORGANIZER
+# =========================================================
+
+@router.get(
+    "/statistics/overview",
+    response_model=ThongKeTongQuanResponse
+)
+def get_dashboard_overview_statistics(
+    db: Session = Depends(get_db),
+    current_user: NguoiDung = Depends(
+        require_roles(
+            "ADMIN",
+            "ORGANIZER"
+        )
+    )
+):
+    # Lấy danh sách sự kiện theo quyền
+    if current_user.VaiTro == "ADMIN":
+        events_query = db.query(SuKien)
+    else:
+        events_query = db.query(SuKien).filter(SuKien.NguoiToChucId == current_user.NguoiDungId)
+
+    events = events_query.all()
+    event_ids = [e.SuKienId for e in events]
+
+    total_events = len(events)
+
+    # Thống kê theo trạng thái
+    status_counts = {
+        "DA_DUYET": 0,
+        "DANG_DIEN_RA": 0,
+        "KET_THUC": 0,
+        "NHAP": 0,
+    }
+    for e in events:
+        st = e.TrangThai or "NHAP"
+        status_counts[st] = status_counts.get(st, 0) + 1
+
+    if not event_ids:
+        return {
+            "TongSoSuKien": 0,
+            "TongDangKy": 0,
+            "TongCheckIn": 0,
+            "TyLeThamDu": 0.0,
+            "TongPhanHoi": 0,
+            "DiemTrungBinh": 0.0,
+            "SuKienTheoTrangThai": status_counts,
+        }
+
+    # 1. Tổng đăng ký
+    total_registrations = (
+        db.query(func.count(DangKy.DangKyId))
+        .filter(DangKy.SuKienId.in_(event_ids))
+        .scalar()
+        or 0
+    )
+
+    # 2. Tổng check-in (từ bảng CheckIn hoặc DangKy.DaCheckIn)
+    total_checkin = (
+        db.query(func.count(CheckIn.CheckInId))
+        .join(DangKy, CheckIn.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId.in_(event_ids))
+        .scalar()
+        or 0
+    )
+
+    if total_checkin == 0:
+        total_checkin = (
+            db.query(func.count(DangKy.DangKyId))
+            .filter(
+                DangKy.SuKienId.in_(event_ids),
+                DangKy.DaCheckIn.is_(True)
+            )
+            .scalar()
+            or 0
+        )
+
+    # 3. Tỷ lệ tham dự = Tổng check-in / Tổng đăng ký * 100
+    if total_registrations > 0:
+        attendance_rate = round((total_checkin / total_registrations) * 100, 2)
+    else:
+        attendance_rate = 0.0
+
+    # 4. Tổng phản hồi & điểm trung bình
+    total_feedback = (
+        db.query(func.count(PhanHoi.PhanHoiId))
+        .join(DangKy, PhanHoi.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId.in_(event_ids))
+        .scalar()
+        or 0
+    )
+
+    avg_score = (
+        db.query(func.avg(PhanHoi.DiemDanhGia))
+        .join(DangKy, PhanHoi.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId.in_(event_ids))
+        .scalar()
+    )
+
+    return {
+        "TongSoSuKien": total_events,
+        "TongDangKy": total_registrations,
+        "TongCheckIn": total_checkin,
+        "TyLeThamDu": attendance_rate,
+        "TongPhanHoi": total_feedback,
+        "DiemTrungBinh": round(float(avg_score), 2) if avg_score is not None else 0.0,
+        "SuKienTheoTrangThai": status_counts,
+    }
+
+
+# =========================================================
+# 7. THỐNG KÊ CHI TIẾT 1 SỰ KIỆN CỤ THỂ
 # ADMIN / ORGANIZER sở hữu sự kiện
 # =========================================================
 
@@ -352,24 +508,33 @@ def get_event_statistics(
         or 0
     )
 
-    # Đã check-in
+    # Đã check-in (từ bảng CheckIn hoặc cột DaCheckIn)
     da_check_in = (
-        db.query(
-            func.count(DangKy.DangKyId)
-        )
-        .filter(
-            DangKy.SuKienId == event_id,
-            DangKy.DaCheckIn.is_(True)
-        )
+        db.query(func.count(CheckIn.CheckInId))
+        .join(DangKy, CheckIn.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId == event_id)
         .scalar()
         or 0
     )
+
+    if da_check_in == 0:
+        da_check_in = (
+            db.query(
+                func.count(DangKy.DangKyId)
+            )
+            .filter(
+                DangKy.SuKienId == event_id,
+                DangKy.DaCheckIn.is_(True)
+            )
+            .scalar()
+            or 0
+        )
 
     chua_check_in = (
         tong_dang_ky - da_check_in
     )
 
-    # Tỷ lệ check-in
+    # Tỷ lệ check-in = da_check_in / tong_dang_ky * 100
     if tong_dang_ky > 0:
         ty_le_check_in = (
             da_check_in

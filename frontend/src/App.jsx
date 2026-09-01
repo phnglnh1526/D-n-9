@@ -17,6 +17,12 @@ import AIAssistant
 import AdminEvents
   from "./pages/AdminEvents";
 
+import AdminSchedules
+  from "./pages/AdminSchedules";
+
+import AdminSpeakers
+  from "./pages/AdminSpeakers";
+
 import CheckIn
   from "./pages/CheckIn";
 
@@ -45,10 +51,14 @@ function App() {
     <Routes>
 
       {/* PUBLIC */}
-    <Route
-  path="/feedback/:registrationId"
-  element={<SubmitFeedback />}
-/>
+      <Route
+        path="/feedback"
+        element={<SubmitFeedback />}
+      />
+      <Route
+        path="/feedback/:registrationId"
+        element={<SubmitFeedback />}
+      />
       <Route
         path="/login"
         element={<Login />}
@@ -64,7 +74,7 @@ function App() {
         element={<EventDetail />}
       />
 
-      {/* ADMIN */}
+      {/* ADMIN & ORGANIZER */}
 
       <Route
         element={
@@ -78,10 +88,28 @@ function App() {
           path="/dashboard"
           element={<Dashboard />}
         />
+        <Route
+          path="/admin/dashboard"
+          element={<Dashboard />}
+        />
+        <Route
+          path="/admin"
+          element={<Navigate to="/dashboard" replace />}
+        />
 
         <Route
           path="/admin/events"
           element={<AdminEvents />}
+        />
+
+        <Route
+          path="/admin/schedules"
+          element={<AdminSchedules />}
+        />
+
+        <Route
+          path="/admin/speakers"
+          element={<AdminSpeakers />}
         />
 
         <Route
@@ -109,6 +137,17 @@ function App() {
 
       <Route
         path="/"
+        element={
+          <Navigate
+            to="/events"
+            replace
+          />
+        }
+      />
+
+      {/* 404 Catch-All */}
+      <Route
+        path="*"
         element={
           <Navigate
             to="/events"

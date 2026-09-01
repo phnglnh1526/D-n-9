@@ -1,62 +1,31 @@
-from .routers import auth, events
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+
+from .database import engine
 from .routers import (
     ai,
     auth,
     events,
     feedback,
     registrations,
+    schedules,
+    speakers,
+    users,
 )
-from .ai_service import (
-    answer_event_question,
-    generate_event_notification,
-    summarize_feedback,
-)
-from uuid import uuid4
 
-from sqlalchemy.exc import IntegrityError
-from datetime import datetime
-
-from fastapi import Depends, FastAPI, HTTPException, status
-from sqlalchemy import func, text
-from sqlalchemy.orm import Session
-
-from .database import engine, get_db
-from .models import (
-    CauHoiThuongGap,
-    DangKy,
-    NguoiDung,
-    PhanHoi,
-    SuKien,
-    ThongBao,
-)
-from .schemas import (
-    AIPhanHoiSummaryResponse,
-    CauHoiThuongGapCreate,
-    CauHoiThuongGapResponse,
-    ChatRequest,
-    ChatResponse,
-    CheckInRequest,
-    DangKyCreate,
-    DangKyResponse,
-    PhanHoiCreate,
-    PhanHoiResponse,
-    SuKienCreate,
-    SuKienResponse,
-    SuKienUpdate,
-    ThongBaoAIRequest,
-    ThongBaoResponse,
-    ThongKeSuKienResponse,
-    
-)
 app = FastAPI(
     title="Event Management AI API",
     description="Backend API cho hệ thống quản lý sự kiện tích hợp AI",
     version="1.0.0"
 )
+
+# CORS configuration
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 
 app.add_middleware(
@@ -66,8 +35,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register routers
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(events.router)
+app.include_router(schedules.router)
+app.include_router(speakers.router)
 app.include_router(registrations.router)
 app.include_router(feedback.router)
 app.include_router(ai.router)
@@ -77,7 +51,9 @@ app.include_router(ai.general_router)
 @app.get("/")
 def root():
     return {
-        "message": "Event Management AI API is running"
+        "message": "Event Management AI API is running",
+        "docs_url": "/docs",
+        "version": "1.0.0"
     }
 
 
@@ -102,10 +78,8 @@ def health_database():
         }
 
     except Exception as error:
-        print(error)
-
+        print(f"Database healthcheck error: {error}")
         raise HTTPException(
             status_code=500,
             detail="Không thể kết nối tới MySQL"
         )
-
