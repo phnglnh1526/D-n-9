@@ -40,6 +40,106 @@ router = APIRouter(
     tags=["AI & Notifications"]
 )
 
+<<<<<<< Updated upstream
+=======
+general_router = APIRouter(
+    tags=["AI Chatbot"]
+)
+
+
+def get_full_event_data(event_id: int, db: Session) -> dict | None:
+    event = db.query(SuKien).filter(SuKien.SuKienId == event_id).first()
+    if not event:
+        return None
+
+    # 1. Total registrations
+    registrations = db.query(DangKy).filter(DangKy.SuKienId == event_id).all()
+    total_reg = len(registrations)
+
+    # 2. Check-ins
+    checkins = (
+        db.query(DangKy)
+        .filter(
+            DangKy.SuKienId == event_id,
+            DangKy.DaCheckIn.is_(True),
+        )
+        .all()
+    )
+    checked_in_count = len(checkins)
+    checkin_rate = f"{round((checked_in_count / total_reg * 100), 1)}%" if total_reg > 0 else "0%"
+
+    # 3. Feedback
+    feedbacks = (
+        db.query(PhanHoi)
+        .join(DangKy, PhanHoi.DangKyId == DangKy.DangKyId)
+        .filter(DangKy.SuKienId == event_id)
+        .all()
+    )
+    scores = [f.DiemDanhGia for f in feedbacks if f.DiemDanhGia is not None]
+    avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
+
+    # 4. Sessions
+    sessions = (
+        db.query(PhienSuKien)
+        .filter(PhienSuKien.SuKienId == event_id)
+        .order_by(PhienSuKien.ThoiGianBatDau.asc())
+        .all()
+    )
+    sessions_data = [
+        {
+            "TieuDe": s.TieuDe,
+            "ThoiGianBatDau": s.ThoiGianBatDau.strftime("%H:%M ngày %d/%m/%Y") if s.ThoiGianBatDau else "",
+            "ThoiGianKetThuc": s.ThoiGianKetThuc.strftime("%H:%M ngày %d/%m/%Y") if s.ThoiGianKetThuc else "",
+            "DiaDiemChiTiet": s.DiaDiem,
+            "DienGia": s.dien_gia.HoTen if s.dien_gia else None,
+            "ChucDanh": s.dien_gia.ChucDanh if s.dien_gia else None,
+            "DonVi": s.dien_gia.DonVi if s.dien_gia else None,
+        }
+        for s in sessions
+    ]
+
+    # 5. Speakers in this event
+    speaker_ids = {s.DienGiaId for s in sessions if s.DienGiaId}
+    speakers = db.query(DienGia).filter(DienGia.DienGiaId.in_(speaker_ids)).all() if speaker_ids else []
+    speakers_data = [
+        {"HoTen": sp.HoTen, "ChucDanh": sp.ChucDanh, "DonVi": sp.DonVi}
+        for sp in speakers
+    ]
+
+    return {
+        "SuKienId": event.SuKienId,
+        "TenSuKien": event.TenSuKien,
+        "MoTa": event.MoTa,
+        "DiaDiem": event.DiaDiem,
+        "ThoiGianBatDau": event.ThoiGianBatDau.strftime("%H:%M ngày %d/%m/%Y") if event.ThoiGianBatDau else "",
+        "ThoiGianKetThuc": event.ThoiGianKetThuc.strftime("%H:%M ngày %d/%m/%Y") if event.ThoiGianKetThuc else "",
+        "SoLuongToiDa": event.SoLuongToiDa,
+        "TrangThai": event.TrangThai,
+        "TongDangKy": total_reg,
+        "DaCheckIn": checked_in_count,
+        "TyLeCheckIn": checkin_rate,
+        "TongPhanHoi": len(feedbacks),
+        "DiemTrungBinh": avg_score,
+        "Sessions": sessions_data,
+        "Speakers": speakers_data,
+    }
+
+
+def get_all_events_summary(db: Session) -> list[dict]:
+    events = db.query(SuKien).order_by(SuKien.ThoiGianBatDau.asc()).all()
+    return [
+        {
+            "SuKienId": e.SuKienId,
+            "TenSuKien": e.TenSuKien,
+            "TrangThai": e.TrangThai,
+            "DiaDiem": e.DiaDiem,
+            "ThoiGianBatDau": e.ThoiGianBatDau.strftime("%H:%M ngày %d/%m/%Y") if e.ThoiGianBatDau else "",
+            "ThoiGianKetThuc": e.ThoiGianKetThuc.strftime("%H:%M ngày %d/%m/%Y") if e.ThoiGianKetThuc else "",
+        }
+        for e in events
+    ]
+
+>>>>>>> Stashed changes
 
 # =========================================================
 # 1. AI TÓM TẮT PHẢN HỒI
