@@ -35,6 +35,9 @@ import Login
 import Registrations
   from "./pages/Registrations";
 
+import Home
+  from "./pages/Home";
+
 import "./App.css";
 
 import EventDetail
@@ -45,7 +48,12 @@ function App() {
     <Routes>
 
       {/* PUBLIC */}
-    <Route
+      <Route
+        path="/"
+        element={<Home />}
+      />
+
+      <Route
   path="/feedback/:registrationId"
   element={<SubmitFeedback />}
 />
@@ -105,17 +113,6 @@ function App() {
         />
 
       </Route>
-
-
-      <Route
-        path="/"
-        element={
-          <Navigate
-            to="/events"
-            replace
-          />
-        }
-      />
 
     </Routes>
   );
